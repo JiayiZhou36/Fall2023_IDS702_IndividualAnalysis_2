@@ -1,0 +1,228 @@
+---
+title: "Race and Gender on Resume Callback"
+author: "Jiayi Zhou"
+date: "10/18/2023"
+format:
+  pdf:
+    include-in-header:
+      text: |
+        \addtokomafont{disposition}{\rmfamily}
+editor: visual
+---
+
+## Overview
+
+This dataset contains experimental data from a study aimed at understanding the factors that influence resume selection for a callback. The experimental data is derived from a study that sought to investigate the impact of race and gender on job application callback rates. The study monitored job postings in Boston and Chicago for several months during 2001 and 2002 and used this data to construct a set of test cases. The research question is: How do race and gender influence job application callback rates? This is an inference problem. The dataset comprises 4,870 observations and 30 variables, including gender, race, callback receipt, job type, and job industry.
+
+```{r,include=FALSE}
+library(openintro)
+library(tidyverse)
+library(DataExplorer)
+library(car)
+library(pROC)
+library(caret)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(ggplot2)
+```
+
+```{r,include=FALSE}
+data("resume")
+```
+
+## Data Cleaning
+
+Two variables, the indicator for whether the employer is a federal contractor and the type of company, contain missing values that cannot be easily computed or retrieved. Due to a lack of information, no observations are removed, and no values are computed to fill in.
+
+Factorization has been applied to the following variables: the indicator for whether the employer is an Equal Opportunity Employer, the indicator for whether communication skills are required, the indicator for whether some level of education is required, the indicator for whether computer skills are required, the indicator for whether organizational skills are required, the indicator for whether there was a callback from the job posting for the person listed on this resume, the indicator for whether the resume listed a college degree, the indicator for whether the resume listed that the candidate has been awarded some honors, the indicator for whether the resume listed working while in school, the indicator for whether computer skills were listed on the resume, the indicator for whether any special skills were listed on the resume, the indicator for whether volunteering was listed on the resume, the indicator for whether military experience was listed on the resume, the indicator for whether there were gaps in the person's employment history, and the indicator for whether the resume lists an email address, based on the variable explanations on the website. No other assumption is made during the data cleaning process, and no observations are removed.
+
+```{r,include=FALSE}
+summary(resume)
+```
+
+```{r,include=FALSE}
+glimpse(resume)
+```
+
+```{r,include=FALSE}
+plot_bar(resume$received_callback)
+```
+
+```{r,include=FALSE}
+plot_bar(resume)
+```
+
+```{r,include=FALSE}
+names(which(colSums(is.na(resume)) > 0))
+```
+
+```{r,include=FALSE}
+ulst <- lapply(resume, unique)
+```
+
+```{r,include=FALSE}
+resume |> count(job_city)
+```
+
+```{r,include=FALSE}
+resume |> count(job_industry)
+```
+
+```{r,include=FALSE}
+resume |> count(job_type)
+```
+
+```{r,include=FALSE}
+names <- c('job_equal_opp_employer', 'job_req_communication',
+'job_req_education','job_req_computer', 'job_req_organization', 'received_callback','college_degree','honors', 'worked_during_school', 'computer_skills', 'special_skills', 'volunteer','military','employment_holes','has_email_address')
+resume[,names] <- lapply(resume[,names] , factor)
+```
+
+```{r,include=FALSE}
+summary(resume)
+```
+
+## Modeling
+
+##### Logistic Regression
+
+Based on the question, the outcome variable is whether applicants receive a callback. Logistic regression is used because the outcome variable has two categories: receiving a callback (coded as 1) or not receiving a callback (coded as 0).
+
+##### Predictor Variables Selection
+
+We selected predictor variables based on whether they act as confounding variables that are associated with both race, gender, and the outcome variable. Based on that consideration, the predictor variables included in the models are as follows: city where the job was located, industry of the job, type of role, inferred race associated with the first name on the resume, inferred gender associated with the first name on the resume, resume quality, years of experience listed on the resume, and all the variables that we factorized in the above section.
+
+Total 21 variables are included, with 20 categorical variables and 1 continuous variable.
+
+The variables that were not included are as follows with reasons:
+
+1.  Unique ID associated with the advertisement, due to the large number of categories.
+2.  Indicator for whether the employer is a federal contractor, due to missing values.
+3.  Type of company, as it contains unknown values that cannot be easily imputed.
+4.  Indicator for whether any job requirements are listed, as it is covered by other skills such as communication and computer skills.
+5.  Amount of experience required, as it has values that cannot be easily converted, such as 'some' and empty values.
+6.  Level of education required, as some values are not listed.
+7.  The first name used on the resume, due to the multitude of categories.
+8.  Years of college education listed on the resume, as this information is covered by the presence of a college degree.
+
+```{r,include=FALSE}
+model_1 <-glm(received_callback~job_city+job_industry+job_type+job_equal_opp_employer+job_req_communication+job_req_education+job_req_computer+job_req_organization+race+gender+college_degree+honors+worked_during_school+computer_skills+special_skills+volunteer+military+employment_holes+has_email_address+resume_quality+years_experience, data=resume, family=binomial)
+summary(model_1)
+```
+
+##### Model and Summary Output Table
+
+In our model, we initially assessed Cook's distance for influential points, leading us to exclude three observations due to their influence on the results. This step became necessary because the significance level of the job industry in transportation and communication shifted from being significant to becoming insignificant. We then refitted the model and reevaluated Cook's distance. The removal of new observations did not alter the significance level, suggesting that they were not influential points in our analysis. Consequently, we proceeded with the model, which included 4,867 observations.
+
+For logistic regression assumptions, the sole continuous variable, years of experience, exhibited a linear relationship and constant variance with the predicted value. Thus no modifications were made to the variables. Additionally, all predictor variables had VIF scores below 5, indicating that multi-collinearity was not violated.
+
+Based on these findings, the summary output table is presented below.
+
+```{r,include=FALSE}
+plot(resume$years_experience, predict(model_1))
+#pretty linear, just one outlier, check cook distance
+```
+
+```{r,include=FALSE}
+resume_1 <- subset(resume, (years_experience != 44))
+```
+
+```{r,include=FALSE}
+model_2 <- glm(received_callback~job_city+job_industry+job_type+job_equal_opp_employer+job_req_communication+job_req_education+job_req_computer+job_req_organization+race+gender+college_degree+honors+worked_during_school+computer_skills+special_skills+volunteer+military+employment_holes+has_email_address+resume_quality+years_experience, data=resume_1, family=binomial)
+summary(model_2)
+```
+
+```{r,include=FALSE}
+plot(model_1,which=4)
+```
+
+```{r,include=FALSE}
+resume_2 <- resume %>% filter(!(row.names(resume) %in% c(383,1520,1533)))
+```
+
+```{r,include=FALSE}
+model_3 <- glm(received_callback~job_city+job_industry+job_type+job_equal_opp_employer+job_req_communication+job_req_education+job_req_computer+job_req_organization+race+gender+college_degree+honors+worked_during_school+computer_skills+special_skills+volunteer+military+employment_holes+has_email_address+resume_quality+years_experience, data=resume_2, family=binomial)
+summary(model_3)
+```
+
+```{r,include=FALSE}
+plot(model_3,which=4)
+```
+
+```{r,include=FALSE}
+resume_3 <- resume_2 %>% filter(!(row.names(resume_2) %in% c(1212,1527,3308)))
+```
+
+```{r,include=FALSE}
+model_4 <- glm(received_callback~job_city+job_industry+job_type+job_equal_opp_employer+job_req_communication+job_req_education+job_req_computer+job_req_organization+race+gender+college_degree+honors+worked_during_school+computer_skills+special_skills+volunteer+military+employment_holes+has_email_address+resume_quality+years_experience, data=resume_3, family=binomial)
+summary(model_4)
+```
+
+```{r,include=FALSE}
+plot(resume_2$years_experience, predict(model_3))
+```
+
+```{r,include=FALSE}
+resume_4 <- subset(resume_2, (years_experience != 44))
+```
+
+```{r,include=FALSE}
+model_5 <- glm(received_callback~job_city+job_industry+job_type+job_equal_opp_employer+job_req_communication+job_req_education+job_req_computer+job_req_organization+race+gender+college_degree+honors+worked_during_school+computer_skills+special_skills+volunteer+military+employment_holes+has_email_address+resume_quality+years_experience, data=resume_4, family=binomial)
+summary(model_5)
+```
+
+```{r, echo=FALSE}
+tab_model(model_3, pred.labels = c("Intercept", "Chicago", "Insurance", "Manufacture","Other","Transportation","Retail", "Manager", "Sales", "Sales rep","Secretary","Supervisor", "Equal opp","Req communication","Req education","Req computer","Req organization","Race [white]","Gender [male]","College degree","Honors","Worked during school","Computer skills","Special skills","Volunteer","Military","Employment holes","Email","Low resume quality","Years experience"), title = "Receive Callback", show.se = TRUE)
+```
+
+```{r,include=FALSE}
+vif(model_3)
+```
+
+##### Model Assessment
+
+Since our task is inference, we used the ROC curve to find the best cutoff point and a confusion matrix to evaluate the model. Based on figure 1, the best cutoff point is 0.076. Based on the confusion matrix, the accuracy is 0.6217, and the kappa score is 0.0986. Accuracy score is good, but kappa is low. The significant gap between these two metrics indicates that our data is imbalanced, with far fewer classifications for receiving a callback. Given this imbalance, we focus on the F1 score, which is a weighted average of precision and recall. The F1 score is 0.21892, indicating that our model doesn't perform as well.
+
+##### Fig 1: ROC Curve
+
+\centering
+
+```{r,echo=FALSE, fig.width = 4, fig.height = 2.5, results='hide', message=FALSE}
+roc(resume_2$received_callback, fitted(model_3), print.thres="best",print.auc=T, plot=T,legacy.axes=T)
+```
+
+\raggedright
+
+```{r,include=FALSE}
+sum(fitted(model_3) > 0.076)
+```
+
+```{r,include=FALSE}
+confusionMatrix(factor (ifelse (fitted(model_3) > 0.076,"1", "0")), factor(resume_2$received_callback), positive = "1", mode="everything")
+```
+
+## Results
+
+In relation to the research question, our aim is to determine the influence of race and gender on job application callback rates. Based on the summary table presented earlier, with respect to gender, while controlling for all other variables, we have found that the odds of male candidates receiving callbacks are 0.97 times higher than those of female candidates. However, based on the p-value and the significance level ($\alpha = 0.05$), we do not reach a conclusive relationship between gender and applicants' callback reception. The confidence interval ranges from 0.71 to 1.32, indicating that we can be 95% confident that the odds of male candidates receiving callbacks are between 0.71 and 1.32 times higher than those of female candidates.
+
+Regarding race, while controlling for other variables, we observed that the odds of white candidates receiving callbacks are 1.557 times higher than those of black candidates. This leads us to conclude that there is a significant linear relationship between race and callback reception in the population at the $\alpha = 0.05$ level. The confidence interval for this comparison falls within the range of 1.26 to 1.94, implying that we can be 95% confident that the odds of white candidates receiving callbacks are between 1.26 and 1.94 times higher than those of black candidates. Based on figure 2, we can also see that white candidates receive more callback compare to black candidates.
+
+##### Fig 2: Race and Receive Callback
+
+\centering
+
+```{r, echo=FALSE, fig.width = 4, fig.height = 2.5}
+ggplot(resume, aes(x = race, fill = factor(received_callback, labels = c("No", "Yes")))) + geom_bar(position = "stack") +labs(x = "Race", fill = "Receive Callback")
+```
+
+\raggedright
+
+Additionally, other variables such as job location in Chicago, job type (e.g., manager or sales representative), the employer being an Equal Opportunity Employer, job-required education, computer skills, and organizational skills, applicants with a college degree, honors degree, computer skills, special skills, employment gaps, and years of experience also have an effect on job application callback rates based on p-values.
+
+## Future Work
+
+The validity of this analysis depends on the accuracy of the assumptions made and the representativeness of the dataset. One of the strengths of this analysis is its inclusion of numerous confounding variables related to both race, gender, and whether applicants receive a callback. However, it also has several limitations.\
+Firstly, we are dealing with a highly imbalanced dataset where the number of observations not receiving callbacks significantly outweighs the number of observations receiving callbacks. In the future, it would be beneficial to use a more balanced dataset for analysis.\
+Secondly, race and gender are inferred based on first names, but the accuracy of this inference is uncertain as we lack verified data. This introduces potential biases into the analysis.\
+Additionally, there are two variables with missing values: the indicator for whether the employer is a federal contractor and the type of company. If we can provide more detailed values for these variables and include them in the model, it might lead to improvements in the model's performance.
